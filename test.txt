@@ -1,1 +1,136 @@
-creted 
+import pandas as pd
+import nltk
+import re
+from nltk.tokenize import word_tokenize
+from nltk.corpus import stopwords
+from nltk.stem import WordNetLemmatizer
+
+# Download required NLTK data
+nltk.download('punkt')
+nltk.download('stopwords')
+nltk.download('wordnet')
+
+# Load the CSV file
+def load_data(csv_file):
+    try:
+        df = pd.read_csv(csv_file)
+        return df
+    except FileNotFoundError:
+        print("Error: orders.csv not found.")
+        return None
+
+# Preprocess user input for intent recognition
+def preprocess_text(text):
+    lemmatizer = WordNetLemmatizer()
+    stop_words = set(stopwords.words('english'))
+    tokens = word_tokenize(text.lower())
+    tokens = [lemmatizer.lemmatize(token) for token in tokens if token.isalnum() and token not in stop_words]
+    return tokens
+
+# Extract order_id from user input (e.g., "status of order 1001")
+def extract_order_id(text):
+    match = re.search(r'\b\d{4}\b', text)
+    return int(match.group()) if match else None
+
+# Identify user intent based on keywords
+def identify_intent(tokens):
+    if any(word in tokens for word in ['status', 'track', 'where', 'order']):
+        return 'check_status'
+    elif any(word in tokens for word in ['cancel', 'return', 'stop']):
+        return 'cancel_order'
+    elif any(word in tokens for word in ['delivery', 'ship', 'arrive']):
+        return 'delivery_info'
+    elif any(word in tokens for word in ['product', 'item', 'detail']):
+        return 'product_details'
+    elif any(word in tokens for word in ['interaction', 'history', 'note']):
+        return 'interaction_history'
+    else:
+        return 'general'
+
+# Chatbot response logic
+def generate_response(df, intent, order_id, user_input):
+    if order_id is None and intent != 'general':
+        return "Please provide a valid order ID (e.g., 1001)."
+
+    if intent == 'check_status':
+        order = df[df['order_id'] == order_id]
+        if not order.empty:
+            status = order['status'].iloc[0]
+            return f"Order {order_id} is currently {status}."
+        else:
+            return f"No order found with ID {order_id}."
+
+    elif intent == 'cancel_order':
+        order = df[df['order_id'] == order_id]
+        if not order.empty:
+            status = order['status'].iloc[0]
+            if status == 'Cancelled':
+                return f"Order {order_id} is already cancelled."
+            elif status in ['Shipped', 'Delivered']:
+                return f"Order {order_id} cannot be cancelled as it is {status}. Please contact support for assistance."
+            else:
+                return f"Order {order_id} cancellation request noted. Please confirm with customer support."
+        else:
+            return f"No order found with ID {order_id}."
+
+    elif intent == 'delivery_info':
+        order = df[df['order_id'] == order_id]
+        if not order.empty:
+            status = order['status'].iloc[0]
+            if status == 'Delivered':
+                return f"Order {order_id} was delivered on {order['interaction_date'].iloc[0]}."
+            elif status == 'Shipped':
+                return f"Order {order_id} has been shipped. Check your email for tracking details."
+            else:
+                return f"Order {order_id} is still {status}. No delivery details available yet."
+        else:
+            return f"No order found with ID {order_id}."
+
+    elif intent == 'product_details':
+        order = df[df['order_id'] == order_id]
+        if not order.empty:
+            product = order['product_name'].iloc[0]
+            quantity = order['quantity'].iloc[0]
+            total = order['total_amount'].iloc[0]
+            return f"Order {order_id} includes {quantity} x {product} for a total of ${total:.2f}."
+        else:
+            return f"No order found with ID {order_id}."
+
+    elif intent == 'interaction_history':
+        interactions = df[df['order_id'] == order_id][['interaction_type', 'interaction_date', 'interaction_notes']]
+        if not interactions.empty:
+            response = f"Interaction history for Order {order_id}:\n"
+            for _, row in interactions.iterrows():
+                response += f"- {row['interaction_date']} ({row['interaction_type']}): {row['interaction_notes']}\n"
+            return response
+        else:
+            return f"No interactions found for Order {order_id}."
+
+    else:
+        return "I'm here to help! Please ask about your order status, delivery, cancellation, or interaction history (e.g., 'status of order 1001')."
+
+# Main chatbot loop
+def run_chatbot():
+    df = load_data('orders.csv')
+    if df is None:
+        return
+
+    print("Welcome to the Customer Support Chatbot! Type 'exit' to quit.")
+    while True:
+        user_input = input("You: ").strip()
+        if user_input.lower() == 'exit':
+            print("Goodbye!")
+            break
+
+        # Preprocess input and identify intent
+        tokens = preprocess_text(user_input)
+        order_id = extract_order_id(user_input)
+        intent = identify_intent(tokens)
+
+        # Generate and display response
+        response = generate_response(df, intent, order_id, user_input)
+        print(f"Bot: {response}")
+
+# Run the chatbot
+if _name_ == "_main_":
+    run_chatbot()
